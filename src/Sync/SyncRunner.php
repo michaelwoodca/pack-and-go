@@ -106,9 +106,14 @@ final class SyncRunner
             return $state->toProgress();
         }
 
+        $sectionType = is_string($mapping['sectionType'] ?? null) ? $mapping['sectionType'] : '';
+        $fieldTypes = $this->fieldTypesFor($sectionType);
+
         $builder = new PostBuilder($this->plugin->contentCleaner(), new \NoTrouble\PackAndGo\Content\MediaResolver());
         $friendly = new FriendlyMessage();
         $now = time();
+
+        $pending = array();
 
         foreach ($postIds as $postId) {
             $postId = (int) $postId;
@@ -121,7 +126,7 @@ final class SyncRunner
                     continue;
                 }
 
-                $built = $builder->build($postId, $mapping);
+                $built = $builder->build($postId, $mapping, $fieldTypes);
                 $hash = SyncLedger::hash($built);
                 $entry = $ledger->entry($wpType, $postId);
 
@@ -131,29 +136,32 @@ final class SyncRunner
                     continue;
                 }
 
-                $tagIds = $this->resolveTags($account, $profile, $sectionId, $built['tags'], $state, $friendly, $title);
-
                 if ($entry !== null && $entry['nt_post_id'] !== '') {
+                    // An already-imported post changed: update it in place (per-post; uncommon on
+                    // a first import, so it's fine that this isn't batched).
+                    $tagIds = $this->resolveTags($account, $profile, $sectionId, $built['tags'], $state, $friendly, $title);
                     $this->plugin->client()->updatePost($account, $profile, $sectionId, $entry['nt_post_id'], $built['attributes'], $tagIds);
-                    $ntId = $entry['nt_post_id'];
-                    $state->recordUpdated($postId, $ntId);
-                } else {
-                    $created = $this->plugin->client()->createPost($account, $profile, $sectionId, $built['attributes'], $tagIds);
-                    $ntId = is_string($created['data']['id'] ?? null) ? $created['data']['id'] : '';
+                    $ledger->record($wpType, $postId, $entry['nt_post_id'], $hash, $now);
+                    $state->recordUpdated($postId, $entry['nt_post_id']);
+                    $this->attachMedia($account, $profile, $entry['nt_post_id'], $built['media'], $state, $friendly, $title);
 
-                    if ($ntId === '') {
-                        throw new RuntimeException(__('NoTrouble did not confirm the new post.', 'pack-and-go'));
-                    }
-
-                    $state->recordCreated($postId, $ntId);
+                    continue;
                 }
 
-                $ledger->record($wpType, $postId, $ntId, $hash, $now);
-                $this->attachMedia($account, $profile, $ntId, $built['media'], $state, $friendly, $title);
+                // New post: queue it for the single batch-create request below (its tags and
+                // media ride along inline, so the whole batch is one rate-limited call).
+                $pending[] = array(
+                    'postId' => $postId,
+                    'title' => $title,
+                    'hash' => $hash,
+                    'item' => $this->toBatchItem($built),
+                );
             } catch (Throwable $e) {
                 $state->recordFailed($title, $friendly->for($e));
             }
         }
+
+        $this->pushBatch($account, $profile, $sectionId, $pending, $ledger, $state, $friendly, $now, $wpType);
 
         $state->advanceCursor(count($postIds));
 
@@ -165,6 +173,83 @@ final class SyncRunner
         $state->persist();
 
         return $state->toProgress();
+    }
+
+    /**
+     * @param array{attributes: array<string, mixed>, media: array<int, array{slot: string, url: string, alt: string}>, tags: array<int, string>} $built
+     * @return array<string, mixed>
+     */
+    private function toBatchItem(array $built): array
+    {
+        $item = array('attributes' => $built['attributes']);
+
+        if ($built['tags'] !== array()) {
+            $item['tags'] = $built['tags'];
+        }
+
+        if ($built['media'] !== array()) {
+            $item['media'] = $built['media'];
+        }
+
+        return $item;
+    }
+
+    /**
+     * Send all queued new posts in one batch-create request and fold the per-item results back
+     * into the ledger + progress state. A whole-batch failure marks every queued item failed.
+     *
+     * @param array<int, array{postId: int, title: string, hash: string, item: array<string, mixed>}> $pending
+     */
+    private function pushBatch(string $account, string $profile, string $sectionId, array $pending, SyncLedger $ledger, ImportState $state, FriendlyMessage $friendly, int $now, string $wpType): void
+    {
+        if ($pending === array()) {
+            return;
+        }
+
+        try {
+            $response = $this->plugin->client()->createPostsBatch($account, $profile, $sectionId, array_column($pending, 'item'));
+        } catch (Throwable $e) {
+            $message = $friendly->for($e);
+            foreach ($pending as $item) {
+                $state->recordFailed($item['title'], $message);
+            }
+
+            return;
+        }
+
+        $results = is_array($response['message']['results'] ?? null) ? $response['message']['results'] : array();
+
+        foreach ($pending as $index => $item) {
+            $result = $this->resultForIndex($results, $index);
+            $ntId = is_string($result['id'] ?? null) ? $result['id'] : '';
+
+            if (($result['status'] ?? null) === 'created' && $ntId !== '') {
+                $ledger->record($wpType, $item['postId'], $ntId, $item['hash'], $now);
+                $state->recordCreated($item['postId'], $ntId);
+
+                continue;
+            }
+
+            $error = is_string($result['error'] ?? null) && $result['error'] !== ''
+                ? $result['error']
+                : __('NoTrouble did not confirm this post.', 'pack-and-go');
+            $state->recordFailed($item['title'], $error);
+        }
+    }
+
+    /**
+     * @param array<int, mixed> $results
+     * @return array<string, mixed>
+     */
+    private function resultForIndex(array $results, int $index): array
+    {
+        foreach ($results as $result) {
+            if (is_array($result) && ($result['index'] ?? null) === $index) {
+                return $result;
+            }
+        }
+
+        return array();
     }
 
     /**
@@ -273,6 +358,37 @@ final class SyncRunner
         }
 
         return array($account, $profile);
+    }
+
+    /**
+     * @return array<string, string> NoTrouble field key => inputType, for coercing custom properties.
+     */
+    private function fieldTypesFor(string $sectionType): array
+    {
+        $map = array();
+
+        foreach ($this->plugin->client()->contentTypes() as $type) {
+            if (($type['type'] ?? null) !== $sectionType) {
+                continue;
+            }
+
+            $fields = is_array($type['fields'] ?? null) ? $type['fields'] : array();
+            foreach ($fields as $field) {
+                if (! is_array($field)) {
+                    continue;
+                }
+
+                $key = is_string($field['key'] ?? null) ? $field['key'] : '';
+                $inputType = is_string($field['inputType'] ?? null) ? $field['inputType'] : '';
+                if ($key !== '' && $inputType !== '') {
+                    $map[$key] = $inputType;
+                }
+            }
+
+            break;
+        }
+
+        return $map;
     }
 
     private function defaultFormat(string $sectionType): string

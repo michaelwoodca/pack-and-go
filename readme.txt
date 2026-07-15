@@ -4,7 +4,7 @@ Tags: migration, import, export, portfolio, custom post types
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,15 @@ No. Pack & Go only reads from WordPress; it never edits or deletes your WordPres
 Pack & Go reads ACF, Toolset, and Meta Box field definitions directly, so your structured content maps cleanly onto NoTrouble — not just the visible post body.
 
 == Changelog ==
+
+= 0.2.0 =
+* Import WooCommerce and WooCommerce Subscriptions pricing (regular, sale, and subscription price).
+* Build the post body from multiple fields, and add your own headings or text to label them.
+* Much faster imports that stay within rate limits by sending each batch in a single request.
+* Migrate uploaded videos, not just video links (requires the matching NoTrouble update).
+* Galleries can carry multiple images per post.
+* Cleaner data: prices, dates, addresses, and yes/no fields are converted to the right format.
+* Import multiple links per item, and get a heads-up when a required field isn't mapped.
 
 = 0.1.0 =
 * First release.

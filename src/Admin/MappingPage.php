@@ -168,8 +168,10 @@ final class MappingPage
             : $this->plugin->suggester()->suggestTargetMap($targets, $wpItems);
 
         $contentFields = is_array($saved['contentFields'] ?? null)
-            ? array_values(array_filter($saved['contentFields'], 'is_string'))
+            ? $saved['contentFields']
             : $this->plugin->suggester()->suggestContentFields($wpItems);
+
+        $linkFields = is_array($saved['linkFields'] ?? null) ? array_values(array_filter($saved['linkFields'], 'is_array')) : array();
 
         $sectionTitle = is_string($saved['sectionTitle'] ?? null) ? $saved['sectionTitle'] : $postType->label;
 
@@ -216,6 +218,26 @@ final class MappingPage
 
         $this->renderImportInto($postType, $sectionType, $saved, $sectionTitle);
 
+        $unmappedRequired = array();
+        foreach ($targets as $target) {
+            if (empty($target['required'])) {
+                continue;
+            }
+            $mapped = $target['value'] === 'content'
+                ? $contentFields !== array()
+                : (is_string($targetMap[$target['value']] ?? null) && $targetMap[$target['value']] !== '');
+            if (! $mapped) {
+                $unmappedRequired[] = $target['label'];
+            }
+        }
+        if ($unmappedRequired !== array()) {
+            echo '<div class="notice notice-warning inline"><p>' . esc_html(sprintf(
+                /* translators: %s: comma-separated field labels */
+                __('These required fields aren\'t mapped yet, so imported posts may be incomplete: %s', 'pack-and-go'),
+                implode(', ', $unmappedRequired),
+            )) . '</p></div>';
+        }
+
         echo '<table class="widefat striped"><thead><tr>';
         echo '<th style="width:28%;">' . esc_html__('NoTrouble field', 'pack-and-go') . '</th>';
         echo '<th style="width:32%;">' . esc_html__('WordPress field', 'pack-and-go') . '</th>';
@@ -238,6 +260,7 @@ final class MappingPage
         echo '</tbody></table>';
 
         $this->renderTaxonomies($postType, $saved);
+        $this->renderAdditionalLinks($wpItems, $linkFields);
 
         echo '<p style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
         submit_button(__('Save mapping', 'pack-and-go'), 'secondary', 'save', false);
@@ -346,6 +369,16 @@ final class MappingPage
         if ($target['group'] !== '') {
             echo ' <span style="color:#888;font-size:11px;">' . esc_html($target['group']) . '</span>';
         }
+        $options = is_array($target['options'] ?? null) ? $target['options'] : array();
+        if ($options !== array()) {
+            echo '<br /><span style="color:#787c82;font-size:11px;">'
+                . esc_html(sprintf(
+                    /* translators: %s: comma-separated list of accepted values */
+                    __('Expects one of: %s', 'pack-and-go'),
+                    implode(', ', array_slice($options, 0, 12)),
+                ))
+                . '</span>';
+        }
         echo '</td>';
 
         $mediaByKey = array();
@@ -375,13 +408,16 @@ final class MappingPage
     /**
      * @param array{value: string, label: string, group: string, multi: bool} $target
      * @param array<int, array{key: string, label: string, type: string, isMedia: bool, source: string}> $wpItems
-     * @param array<int, string> $contentFields
+     * @param array<int, mixed> $contentFields
      * @param array<string, string> $sampleValues
      */
     private function renderContentRow(array $target, array $wpItems, array $contentFields, array $sampleValues): void
     {
         $textItems = array_values(array_filter($wpItems, static fn (array $item): bool => ! $item['isMedia']));
-        $chosen = $contentFields !== array() ? $contentFields : array('');
+        $blocks = $this->normalizeContentBlocks($contentFields);
+        if ($blocks === array()) {
+            $blocks = array(array('kind' => 'field', 'value' => ''));
+        }
 
         echo '<tr>';
         echo '<td><strong>' . esc_html($target['label']) . '</strong>';
@@ -389,41 +425,48 @@ final class MappingPage
             echo ' <span style="color:#888;font-size:11px;">' . esc_html($target['group']) . '</span>';
         }
         echo '<br /><span style="color:#787c82;font-size:11px;">'
-            . esc_html__('Pick one or more fields. They are joined into the body in this order, with a blank line between them.', 'pack-and-go')
+            . esc_html__('Build the body from one or more blocks, in order. Add a heading or custom text to label a field — e.g. a "Specs" heading above your specs field.', 'pack-and-go')
             . '</span></td>';
 
-        echo '<td data-pag-content-fields>';
-        foreach ($chosen as $key) {
-            $this->renderContentSelect($textItems, is_string($key) ? $key : '');
+        echo '<td colspan="2" data-pag-content-blocks>';
+        foreach ($blocks as $block) {
+            $this->renderContentBlock($textItems, $block);
         }
-        printf(
-            '<p class="pag-content-add" style="margin:6px 0 0;"><button type="button" class="button button-small" data-pag-add-content>%s</button></p>',
-            esc_html__('+ Add another field', 'pack-and-go'),
-        );
+        echo '<p class="pag-content-add" style="margin:6px 0 0;display:flex;gap:8px;">';
+        printf('<button type="button" class="button button-small" data-pag-add-field>%s</button>', esc_html__('+ Add field', 'pack-and-go'));
+        printf('<button type="button" class="button button-small" data-pag-add-custom>%s</button>', esc_html__('+ Add custom', 'pack-and-go'));
+        echo '</p>';
         echo '</td>';
-
-        $parts = array();
-        foreach ($contentFields as $key) {
-            if (is_string($key) && $key !== '' && isset($sampleValues[$key]) && $sampleValues[$key] !== '') {
-                $parts[] = $sampleValues[$key];
-            }
-        }
-        echo '<td>' . $this->previewMarkup(implode("\n\n", $parts), false) . '</td>';
 
         echo '</tr>';
         ?>
 <script>
 (function(){
-  var cell=document.querySelector('[data-pag-content-fields]'); if(!cell)return;
-  var btn=cell.querySelector('[data-pag-add-content]'); if(!btn)return;
-  var addWrap=btn.closest('.pag-content-add');
-  btn.addEventListener('click',function(){
-    var rows=cell.querySelectorAll('.pag-content-field');
-    if(!rows.length)return;
+  var cell=document.querySelector('[data-pag-content-blocks]'); if(!cell)return;
+  var addWrap=cell.querySelector('.pag-content-add');
+  function sync(row){
+    var isField=row.querySelector('[data-pag-kind]').value==='field';
+    row.querySelector('[data-pag-field]').style.display=isField?'':'none';
+    row.querySelector('[data-pag-text]').style.display=isField?'none':'';
+  }
+  function wire(row){
+    row.querySelector('[data-pag-kind]').addEventListener('change',function(){sync(row);});
+    var rm=row.querySelector('[data-pag-remove]');
+    if(rm)rm.addEventListener('click',function(){row.remove();});
+    sync(row);
+  }
+  function add(kind){
+    var rows=cell.querySelectorAll('.pag-content-block');
     var clone=rows[rows.length-1].cloneNode(true);
-    var sel=clone.querySelector('select'); if(sel)sel.value='';
+    clone.querySelector('[data-pag-kind]').value=kind;
+    var f=clone.querySelector('[data-pag-field]').querySelector('select'); if(f)f.value='';
+    var t=clone.querySelector('[data-pag-text]').querySelector('input'); if(t)t.value='';
     cell.insertBefore(clone,addWrap);
-  });
+    wire(clone);
+  }
+  cell.querySelectorAll('.pag-content-block').forEach(wire);
+  cell.querySelector('[data-pag-add-field]').addEventListener('click',function(){add('field');});
+  cell.querySelector('[data-pag-add-custom]').addEventListener('click',function(){add('heading');});
 })();
 </script>
         <?php
@@ -431,22 +474,83 @@ final class MappingPage
 
     /**
      * @param array<int, array{key: string, label: string, type: string, isMedia: bool, source: string}> $textItems
+     * @param array{kind: string, value: string} $block
      */
-    private function renderContentSelect(array $textItems, string $selectedWp): void
+    private function renderContentBlock(array $textItems, array $block): void
     {
-        echo '<p class="pag-content-field" style="margin:0 0 6px;">';
-        echo '<select name="content_fields[]" style="width:100%;">';
+        $kind = $block['kind'];
+        $isField = $kind === 'field';
+
+        echo '<div class="pag-content-block" style="display:flex;gap:8px;align-items:flex-start;margin:0 0 6px;">';
+
+        echo '<select data-pag-kind name="content_kinds[]" style="max-width:160px;">';
+        $kinds = array(
+            'field' => __('WordPress field', 'pack-and-go'),
+            'heading' => __('Heading (H2)', 'pack-and-go'),
+            'subheading' => __('Subheading (H3)', 'pack-and-go'),
+            'text' => __('Text', 'pack-and-go'),
+        );
+        foreach ($kinds as $value => $label) {
+            printf('<option value="%s" %s>%s</option>', esc_attr($value), selected($value, $kind, false), esc_html($label));
+        }
+        echo '</select>';
+
+        echo '<span data-pag-field style="flex:1;' . ($isField ? '' : 'display:none;') . '">';
+        echo '<select name="content_field[]" style="width:100%;">';
         printf('<option value="">%s</option>', esc_html__('— None —', 'pack-and-go'));
         foreach ($textItems as $item) {
             printf(
                 '<option value="%s" %s>%s%s</option>',
                 esc_attr($item['key']),
-                selected($item['key'], $selectedWp, false),
+                selected($item['key'], $isField ? $block['value'] : '', false),
                 esc_html($item['label']),
                 $item['source'] !== '' ? esc_html(' (' . $item['source'] . ')') : '',
             );
         }
-        echo '</select></p>';
+        echo '</select></span>';
+
+        printf(
+            '<span data-pag-text style="flex:1;%s"><input type="text" name="content_text[]" value="%s" placeholder="%s" style="width:100%%;" /></span>',
+            $isField ? 'display:none;' : '',
+            esc_attr($isField ? '' : $block['value']),
+            esc_attr__('Heading or text to insert', 'pack-and-go'),
+        );
+
+        printf('<button type="button" class="button button-small" data-pag-remove title="%s">&times;</button>', esc_attr__('Remove', 'pack-and-go'));
+
+        echo '</div>';
+    }
+
+    /**
+     * @param array<int, mixed> $contentFields
+     * @return array<int, array{kind: string, value: string}>
+     */
+    private function normalizeContentBlocks(array $contentFields): array
+    {
+        $blocks = array();
+
+        foreach ($contentFields as $entry) {
+            if (is_string($entry) && $entry !== '') {
+                $blocks[] = array('kind' => 'field', 'value' => $entry);
+
+                continue;
+            }
+
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $kind = is_string($entry['kind'] ?? null) && in_array($entry['kind'], array('field', 'heading', 'subheading', 'text'), true)
+                ? $entry['kind']
+                : 'field';
+            $value = is_string($entry['value'] ?? null) ? $entry['value'] : '';
+
+            if ($value !== '') {
+                $blocks[] = array('kind' => $kind, 'value' => $value);
+            }
+        }
+
+        return $blocks;
     }
 
     private function previewMarkup(string $value, bool $isImage): string
@@ -482,6 +586,105 @@ final class MappingPage
         }
     }
 
+    /**
+     * @param array<int, array{key: string, label: string, type: string, isMedia: bool, source: string}> $wpItems
+     * @param array<int, array<string, mixed>> $linkFields
+     */
+    private function renderAdditionalLinks(array $wpItems, array $linkFields): void
+    {
+        $urlItems = array_values(array_filter($wpItems, static fn (array $item): bool => ! $item['isMedia']));
+        $rows = $linkFields !== array() ? $linkFields : array(array('label' => '', 'urlField' => ''));
+
+        echo '<h2 style="margin-top:20px;">' . esc_html__('Additional links', 'pack-and-go') . '</h2>';
+        echo '<p class="description" style="margin-top:-6px;">'
+            . esc_html__('Add labelled links (each becomes a button). Give it a label and pick the WordPress field that holds the URL.', 'pack-and-go')
+            . '</p>';
+
+        echo '<div data-pag-link-rows>';
+        foreach ($rows as $row) {
+            $label = is_array($row) && is_string($row['label'] ?? null) ? $row['label'] : '';
+            $urlField = is_array($row) && is_string($row['urlField'] ?? null) ? $row['urlField'] : '';
+            $this->renderLinkRow($urlItems, $label, $urlField);
+        }
+        printf(
+            '<p class="pag-link-add" style="margin:6px 0 0;"><button type="button" class="button button-small" data-pag-add-link>%s</button></p>',
+            esc_html__('+ Add another link', 'pack-and-go'),
+        );
+        echo '</div>';
+        ?>
+<script>
+(function(){
+  var box=document.querySelector('[data-pag-link-rows]'); if(!box)return;
+  var btn=box.querySelector('[data-pag-add-link]'); if(!btn)return;
+  var addWrap=btn.closest('.pag-link-add');
+  btn.addEventListener('click',function(){
+    var rows=box.querySelectorAll('.pag-link-row');
+    if(!rows.length)return;
+    var clone=rows[rows.length-1].cloneNode(true);
+    clone.querySelectorAll('input,select').forEach(function(el){el.value='';});
+    box.insertBefore(clone,addWrap);
+  });
+})();
+</script>
+        <?php
+    }
+
+    /**
+     * @param array<int, array{key: string, label: string, type: string, isMedia: bool, source: string}> $urlItems
+     */
+    private function renderLinkRow(array $urlItems, string $label, string $urlField): void
+    {
+        echo '<p class="pag-link-row" style="display:flex;gap:8px;align-items:center;margin:0 0 6px;flex-wrap:wrap;">';
+        printf(
+            '<input type="text" name="link_labels[]" value="%s" placeholder="%s" class="regular-text" style="max-width:200px;" />',
+            esc_attr($label),
+            esc_attr__('Link label (e.g. Website)', 'pack-and-go'),
+        );
+        echo '<span style="color:#787c82;">' . esc_html__('from', 'pack-and-go') . '</span>';
+        echo '<select name="link_url_fields[]">';
+        printf('<option value="">%s</option>', esc_html__('— None —', 'pack-and-go'));
+        foreach ($urlItems as $item) {
+            printf(
+                '<option value="%s" %s>%s%s</option>',
+                esc_attr($item['key']),
+                selected($item['key'], $urlField, false),
+                esc_html($item['label']),
+                $item['source'] !== '' ? esc_html(' (' . $item['source'] . ')') : '',
+            );
+        }
+        echo '</select></p>';
+    }
+
+    /**
+     * @return array<int, array{kind: string, value: string}>
+     */
+    private function collectContentBlocks(): array
+    {
+        $rawKinds = isset($_POST['content_kinds']) && is_array($_POST['content_kinds']) ? wp_unslash($_POST['content_kinds']) : array();
+        $rawFields = isset($_POST['content_field']) && is_array($_POST['content_field']) ? wp_unslash($_POST['content_field']) : array();
+        $rawTexts = isset($_POST['content_text']) && is_array($_POST['content_text']) ? wp_unslash($_POST['content_text']) : array();
+
+        $blocks = array();
+
+        foreach ($rawKinds as $i => $kindRaw) {
+            $kind = is_string($kindRaw) ? sanitize_key($kindRaw) : 'field';
+
+            if ($kind === 'field') {
+                $value = isset($rawFields[$i]) && is_string($rawFields[$i]) ? sanitize_text_field($rawFields[$i]) : '';
+            } elseif (in_array($kind, array('heading', 'subheading', 'text'), true)) {
+                $value = isset($rawTexts[$i]) && is_string($rawTexts[$i]) ? sanitize_text_field($rawTexts[$i]) : '';
+            } else {
+                continue;
+            }
+
+            if ($value !== '') {
+                $blocks[] = array('kind' => $kind, 'value' => $value);
+            }
+        }
+
+        return $blocks;
+    }
+
     public function handleSave(): void
     {
         $this->assertCapability();
@@ -496,16 +699,21 @@ final class MappingPage
         /** @var array<string, string> $rawMap */
         $rawMap = isset($_POST['map']) && is_array($_POST['map']) ? wp_unslash($_POST['map']) : array();
 
-        /** @var array<int, mixed> $rawContentFields */
-        $rawContentFields = isset($_POST['content_fields']) && is_array($_POST['content_fields']) ? wp_unslash($_POST['content_fields']) : array();
-        $contentFields = array();
-        foreach ($rawContentFields as $key) {
-            if (! is_string($key)) {
+        $contentFields = $this->collectContentBlocks();
+
+        /** @var array<int, mixed> $rawLinkLabels */
+        $rawLinkLabels = isset($_POST['link_labels']) && is_array($_POST['link_labels']) ? wp_unslash($_POST['link_labels']) : array();
+        /** @var array<int, mixed> $rawLinkUrlFields */
+        $rawLinkUrlFields = isset($_POST['link_url_fields']) && is_array($_POST['link_url_fields']) ? wp_unslash($_POST['link_url_fields']) : array();
+        $linkFields = array();
+        foreach ($rawLinkUrlFields as $i => $urlFieldRaw) {
+            if (! is_string($urlFieldRaw)) {
                 continue;
             }
-            $clean = sanitize_text_field($key);
-            if ($clean !== '' && ! in_array($clean, $contentFields, true)) {
-                $contentFields[] = $clean;
+            $urlField = sanitize_text_field($urlFieldRaw);
+            $label = isset($rawLinkLabels[$i]) && is_string($rawLinkLabels[$i]) ? sanitize_text_field($rawLinkLabels[$i]) : '';
+            if ($urlField !== '' && $label !== '') {
+                $linkFields[] = array('label' => $label, 'urlField' => $urlField);
             }
         }
 
@@ -533,6 +741,7 @@ final class MappingPage
             'targetSectionId' => $targetSectionId,
             'map' => $this->sanitizeMap($rawMap),
             'contentFields' => $contentFields,
+            'linkFields' => $linkFields,
             'taxonomies' => $this->sanitizeMap(isset($_POST['taxonomies']) ? wp_unslash($_POST['taxonomies']) : null),
         ));
 

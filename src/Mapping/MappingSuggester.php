@@ -103,16 +103,6 @@ final class MappingSuggester
             return null;
         };
 
-        $firstUnusedImage = function () use ($wpItems, $usedWp): ?string {
-            foreach ($wpItems as $item) {
-                if (! isset($usedWp[$item['key']]) && $item['isMedia']) {
-                    return $item['key'];
-                }
-            }
-
-            return null;
-        };
-
         $firstUnusedRich = function () use ($wpItems, $usedWp): ?string {
             foreach ($wpItems as $item) {
                 if (isset($usedWp[$item['key']])) {
@@ -139,7 +129,7 @@ final class MappingSuggester
                 $value === 'name' => $take(isset($byKey['_title']) ? '_title' : null),
                 $value === 'content' => $take(isset($byKey['_content']) ? '_content' : ($findByKeyword('content') ?? $firstUnusedRich())),
                 $value === 'preview' => $take($findByKeyword('preview') ?? (isset($byKey['_excerpt']) ? '_excerpt' : null)),
-                str_starts_with($value, 'media:') => $take($firstUnusedImage()),
+                str_starts_with($value, 'media:') => $take($this->firstUnusedMedia($value, $wpItems, $usedWp)),
                 str_starts_with($value, 'cp:') => $take($this->matchCustomProperty(substr($value, 3), $wpItems, $usedWp)),
                 $value === 'link_url' => $take($findByKeyword('link_url')),
                 default => '',
@@ -181,6 +171,30 @@ final class MappingSuggester
         }
 
         return array_values(array_unique($keys));
+    }
+
+    /**
+     * Match a media slot to an unused WordPress media item of the matching kind: a video slot
+     * takes a video field, an image slot takes any non-video media field.
+     *
+     * @param array<int, array{key: string, label: string, type: string, isMedia: bool}> $wpItems
+     * @param array<string, bool>                                                          $usedWp
+     */
+    private function firstUnusedMedia(string $target, array $wpItems, array $usedWp): ?string
+    {
+        $wantsVideo = str_ends_with($target, 'video');
+
+        foreach ($wpItems as $item) {
+            if (isset($usedWp[$item['key']]) || ! $item['isMedia']) {
+                continue;
+            }
+
+            if (($item['type'] === FieldType::Video->value) === $wantsVideo) {
+                return $item['key'];
+            }
+        }
+
+        return null;
     }
 
     /**

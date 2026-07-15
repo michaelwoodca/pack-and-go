@@ -25,6 +25,39 @@ final class MediaResolver
     }
 
     /**
+     * Resolve every image a field holds. A gallery/repeater field is a list of images
+     * (attachment arrays, ids, or urls); a single-image field yields a one-element list.
+     *
+     * @return array<int, array{url: string, alt: string}>
+     */
+    public function resolveMany(int $postId, string $wpFieldKey): array
+    {
+        if ($wpFieldKey === '_featured_image') {
+            $single = $this->resolve($postId, $wpFieldKey);
+
+            return $single !== null ? array($single) : array();
+        }
+
+        $raw = get_post_meta($postId, $wpFieldKey, true);
+
+        if (is_array($raw) && array_keys($raw) === range(0, count($raw) - 1)) {
+            $out = array();
+            foreach ($raw as $item) {
+                $resolved = $this->fromValue($item);
+                if ($resolved !== null) {
+                    $out[] = $resolved;
+                }
+            }
+
+            return $out;
+        }
+
+        $single = $this->fromValue($raw);
+
+        return $single !== null ? array($single) : array();
+    }
+
+    /**
      * @param mixed $raw
      * @return array{url: string, alt: string}|null
      */

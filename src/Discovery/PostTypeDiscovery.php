@@ -11,6 +11,7 @@ use NoTrouble\PackAndGo\Discovery\FieldAdapters\FieldAdapter;
 use NoTrouble\PackAndGo\Discovery\FieldAdapters\MetaBoxFieldAdapter;
 use NoTrouble\PackAndGo\Discovery\FieldAdapters\RawMetaFieldAdapter;
 use NoTrouble\PackAndGo\Discovery\FieldAdapters\ToolsetFieldAdapter;
+use NoTrouble\PackAndGo\Discovery\FieldAdapters\WooCommerceFieldAdapter;
 
 final class PostTypeDiscovery
 {
@@ -54,6 +55,7 @@ final class PostTypeDiscovery
             new AcfFieldAdapter(),
             new ToolsetFieldAdapter(),
             new MetaBoxFieldAdapter(),
+            new WooCommerceFieldAdapter(),
         );
 
         $this->fallbackAdapter = $fallbackAdapter ?? new RawMetaFieldAdapter();
@@ -101,25 +103,41 @@ final class PostTypeDiscovery
     }
 
     /**
+     * Merge fields from every active framework adapter (deduping by meta key), so a post type
+     * managed by more than one plugin — e.g. a WooCommerce product that also has Toolset fields —
+     * surfaces all of them. Only when no framework adapter matches does the raw-meta fallback run.
+     *
      * @return array{0: array<int, DiscoveredField>, 1: string}
      */
     private function resolveFields(string $postType): array
     {
+        $fields = array();
+        $sources = array();
+        $seen = array();
+
         foreach ($this->frameworkAdapters as $adapter) {
             if (! $adapter->isActive()) {
                 continue;
             }
 
-            $fields = $adapter->fieldsFor($postType);
+            foreach ($adapter->fieldsFor($postType) as $field) {
+                if (isset($seen[$field->metaKey])) {
+                    continue;
+                }
 
-            if ($fields !== array()) {
-                return array($fields, $adapter->source());
+                $seen[$field->metaKey] = true;
+                $fields[] = $field;
+                $sources[$adapter->source()] = true;
             }
         }
 
-        $fallback = $this->fallbackAdapter->fieldsFor($postType);
+        if ($fields === array()) {
+            $fallback = $this->fallbackAdapter->fieldsFor($postType);
 
-        return array($fallback, $fallback === array() ? 'none' : $this->fallbackAdapter->source());
+            return array($fallback, $fallback === array() ? 'none' : $this->fallbackAdapter->source());
+        }
+
+        return array($fields, implode('+', array_keys($sources)));
     }
 
     private function typeLabel(object $postType, string $fallback): string

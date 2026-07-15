@@ -107,8 +107,13 @@ final class ToolsetFieldAdapter implements FieldAdapter
         $label = is_string($definition['name'] ?? null) && $definition['name'] !== '' ? $definition['name'] : $slug;
         $toolsetType = is_string($definition['type'] ?? null) ? $definition['type'] : '';
 
+        // Values are stored at `wpcf-{slug}`, but honour an explicit meta_key if Types provides one.
+        $metaKey = is_string($definition['meta_key'] ?? null) && $definition['meta_key'] !== ''
+            ? $definition['meta_key']
+            : 'wpcf-' . $slug;
+
         return new DiscoveredField(
-            metaKey: 'wpcf-' . $slug,
+            metaKey: $metaKey,
             label: $label,
             type: $this->normalizeType($toolsetType),
             source: $this->source(),

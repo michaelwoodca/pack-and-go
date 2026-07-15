@@ -43,6 +43,11 @@ function esc_url_raw(string $url): string
     return $url;
 }
 
+function esc_html(string $text): string
+{
+    return htmlspecialchars($text, ENT_QUOTES);
+}
+
 /**
  * @param array<string, mixed> $allowed
  */
@@ -129,6 +134,25 @@ echo "\nNo content fields means no body attribute:\n";
 $built3 = $builder->build(42, array('contentFields' => array()));
 check('content attribute is absent', ! isset($built3['attributes']['content']));
 check('name still falls back to the post title', ($built3['attributes']['name'] ?? '') === 'Riverside Rebrand');
+
+echo "\nCustom body blocks (headings/text) interleave with fields (#1):\n";
+$GLOBALS['wp_meta'][42]['wpcf-specs'] = 'Weighs 2kg. Ships in 3 days.';
+$built4 = $builder->build(42, array('contentFields' => array(
+    array('kind' => 'heading', 'value' => 'Product Specs'),
+    array('kind' => 'field', 'value' => 'wpcf-specs'),
+    array('kind' => 'subheading', 'value' => 'Fine print'),
+    array('kind' => 'text', 'value' => 'All sales final.'),
+)));
+$content4 = is_string($built4['attributes']['content'] ?? null) ? $built4['attributes']['content'] : '';
+check('a heading block renders as <h2>', str_contains($content4, '<h2>Product Specs</h2>'));
+check('a subheading block renders as <h3>', str_contains($content4, '<h3>Fine print</h3>'));
+check('the field value is included', str_contains($content4, 'Weighs 2kg'));
+check('custom text is included', str_contains($content4, 'All sales final.'));
+check('heading comes immediately before its field', strpos($content4, 'Product Specs') < strpos($content4, 'Weighs 2kg'));
+
+$built5 = $builder->build(42, array('contentFields' => array('wpcf-specs')));
+$content5 = is_string($built5['attributes']['content'] ?? null) ? $built5['attributes']['content'] : '';
+check('a bare-string entry still works (backward compatible)', str_contains($content5, 'Weighs 2kg'));
 
 echo "\n" . ($failures === 0 ? 'PASS — all assertions green' : "FAIL — {$failures} assertion(s) failed") . "\n";
 exit($failures === 0 ? 0 : 1);

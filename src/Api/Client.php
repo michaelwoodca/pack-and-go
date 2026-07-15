@@ -13,6 +13,15 @@ use RuntimeException;
 
 final class Client
 {
+    private const MAX_RETRIES = 4;
+
+    private const MAX_RETRY_WAIT = 12;
+
+    /**
+     * @var array<int, array<string, mixed>>|null
+     */
+    private ?array $contentTypesCache = null;
+
     public function __construct(
         private readonly Endpoints $endpoints,
         private readonly ConnectionStore $store,
@@ -50,12 +59,16 @@ final class Client
      */
     public function contentTypes(): array
     {
+        if ($this->contentTypesCache !== null) {
+            return $this->contentTypesCache;
+        }
+
         $body = $this->get('/content-types');
 
         /** @var array<int, array<string, mixed>> $data */
         $data = is_array($body['data'] ?? null) ? $body['data'] : array();
 
-        return $data;
+        return $this->contentTypesCache = $data;
     }
 
     /**
@@ -89,6 +102,21 @@ final class Client
         return $this->post(
             sprintf('/accounts/%s/profiles/%s/sections/%s/posts', $account, $profile, $section),
             array('data' => $data),
+        );
+    }
+
+    /**
+     * Create many posts (with their tag names + inline media) in a single request, so a whole
+     * batch costs one rate-limited call instead of one-per-post-plus-media.
+     *
+     * @param array<int, array<string, mixed>> $items Each: {attributes, tags?: string[], media?: [{slot,url,alt}]}
+     * @return array<string, mixed>
+     */
+    public function createPostsBatch(string $account, string $profile, string $section, array $items): array
+    {
+        return $this->post(
+            sprintf('/accounts/%s/profiles/%s/sections/%s/posts/batch', $account, $profile, $section),
+            array('data' => $items),
         );
     }
 
@@ -189,23 +217,39 @@ final class Client
             $args['body'] = wp_json_encode($body);
         }
 
-        $response = wp_remote_request($this->endpoints->apiBase() . $path, $args);
+        $url = $this->endpoints->apiBase() . $path;
+        $attempt = 0;
 
-        if (is_wp_error($response)) {
-            throw new RuntimeException(sprintf(
-                /* translators: %s: error detail */
-                __('Could not reach NoTrouble: %s', 'pack-and-go'),
-                $response->get_error_message(),
-            ));
+        while (true) {
+            $attempt++;
+            $response = wp_remote_request($url, $args);
+
+            if (is_wp_error($response)) {
+                throw new RuntimeException(sprintf(
+                    /* translators: %s: error detail */
+                    __('Could not reach NoTrouble: %s', 'pack-and-go'),
+                    $response->get_error_message(),
+                ));
+            }
+
+            $status = (int) wp_remote_retrieve_response_code($response);
+
+            // NoTrouble rate-limits the API. Rather than fail the import, wait the server's
+            // Retry-After (bounded, to stay within the request time limit) and try again.
+            if ($status === 429 && $attempt <= self::MAX_RETRIES) {
+                $retryAfter = (int) wp_remote_retrieve_header($response, 'retry-after');
+                sleep(max(1, min($retryAfter > 0 ? $retryAfter : 3, self::MAX_RETRY_WAIT)));
+
+                continue;
+            }
+
+            $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
+            $decoded = is_array($decoded) ? $decoded : array();
+
+            $this->guardAgainstError($status, $decoded);
+
+            return $decoded;
         }
-
-        $status = (int) wp_remote_retrieve_response_code($response);
-        $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
-        $decoded = is_array($decoded) ? $decoded : array();
-
-        $this->guardAgainstError($status, $decoded);
-
-        return $decoded;
     }
 
     /**

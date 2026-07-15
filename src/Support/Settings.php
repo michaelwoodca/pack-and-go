@@ -10,7 +10,7 @@ final class Settings
 {
     private const OPTION = 'pack_and_go_settings';
 
-    private const DEFAULT_BATCH_SIZE = 5;
+    private const DEFAULT_BATCH_SIZE = 20;
 
     private const MIN_BATCH_SIZE = 1;
 
