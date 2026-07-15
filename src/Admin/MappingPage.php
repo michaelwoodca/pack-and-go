@@ -449,10 +449,23 @@ final class MappingPage
     row.querySelector('[data-pag-field]').style.display=isField?'':'none';
     row.querySelector('[data-pag-text]').style.display=isField?'none':'';
   }
+  function move(row,dir){
+    if(dir<0){
+      var prev=row.previousElementSibling;
+      if(prev&&prev.classList.contains('pag-content-block'))cell.insertBefore(row,prev);
+    }else{
+      var next=row.nextElementSibling;
+      if(next&&next.classList.contains('pag-content-block'))cell.insertBefore(next,row);
+    }
+  }
   function wire(row){
     row.querySelector('[data-pag-kind]').addEventListener('change',function(){sync(row);});
     var rm=row.querySelector('[data-pag-remove]');
     if(rm)rm.addEventListener('click',function(){row.remove();});
+    var up=row.querySelector('[data-pag-up]');
+    if(up)up.addEventListener('click',function(){move(row,-1);});
+    var dn=row.querySelector('[data-pag-down]');
+    if(dn)dn.addEventListener('click',function(){move(row,1);});
     sync(row);
   }
   function add(kind){
@@ -516,6 +529,8 @@ final class MappingPage
             esc_attr__('Heading or text to insert', 'pack-and-go'),
         );
 
+        printf('<button type="button" class="button button-small" data-pag-up title="%s">&uarr;</button>', esc_attr__('Move up', 'pack-and-go'));
+        printf('<button type="button" class="button button-small" data-pag-down title="%s">&darr;</button>', esc_attr__('Move down', 'pack-and-go'));
         printf('<button type="button" class="button button-small" data-pag-remove title="%s">&times;</button>', esc_attr__('Remove', 'pack-and-go'));
 
         echo '</div>';

@@ -110,6 +110,11 @@ final class PostBuilder
             $attributes['customProperties'] = $customProps;
         }
 
+        $publishedAt = $this->publishedAt($post);
+        if ($publishedAt !== null) {
+            $attributes['publishedAt'] = $publishedAt;
+        }
+
         if (! isset($attributes['name']) || $attributes['name'] === '') {
             $title = $post !== null ? (string) $post->post_title : '';
             $attributes['name'] = $title !== '' ? $title : __('Untitled', 'pack-and-go');
@@ -292,6 +297,39 @@ final class PostBuilder
         }
 
         return $out !== array() ? $out : null;
+    }
+
+    /**
+     * The post's original WordPress publish date as a UTC ISO-8601 string, so imported content
+     * keeps its real chronology instead of being dated "now" on publish. Prefers post_date_gmt
+     * (already UTC); falls back to the site-timezone post_date. Null when neither is set.
+     */
+    private function publishedAt(?\WP_Post $post): ?string
+    {
+        if ($post === null) {
+            return null;
+        }
+
+        $gmt = isset($post->post_date_gmt) ? (string) $post->post_date_gmt : '';
+        if ($gmt !== '' && ! str_starts_with($gmt, '0000')) {
+            try {
+                return (new \DateTimeImmutable($gmt, new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
+            } catch (\Exception $e) {
+                return null;
+            }
+        }
+
+        $local = isset($post->post_date) ? (string) $post->post_date : '';
+        if ($local === '' || str_starts_with($local, '0000')) {
+            return null;
+        }
+
+        $timezone = function_exists('wp_timezone') ? wp_timezone() : new \DateTimeZone('UTC');
+        try {
+            return (new \DateTimeImmutable($local, $timezone))->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     /**

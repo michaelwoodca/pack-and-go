@@ -20,6 +20,10 @@ class WP_Post
     public string $post_content = '';
 
     public string $post_excerpt = '';
+
+    public string $post_date = '';
+
+    public string $post_date_gmt = '';
 }
 
 /** @var array<int, WP_Post> */
@@ -153,6 +157,21 @@ check('heading comes immediately before its field', strpos($content4, 'Product S
 $built5 = $builder->build(42, array('contentFields' => array('wpcf-specs')));
 $content5 = is_string($built5['attributes']['content'] ?? null) ? $built5['attributes']['content'] : '';
 check('a bare-string entry still works (backward compatible)', str_contains($content5, 'Weighs 2kg'));
+
+echo "\nOriginal WordPress publish date is preserved as UTC publishedAt (option A):\n";
+$GLOBALS['wp_posts'][42]->post_date_gmt = '2024-05-01 12:30:00';
+$builtDate = $builder->build(42, array());
+check('publishedAt = post_date_gmt in UTC ISO-8601', ($builtDate['attributes']['publishedAt'] ?? null) === '2024-05-01T12:30:00Z');
+
+$GLOBALS['wp_posts'][42]->post_date_gmt = '0000-00-00 00:00:00';
+$GLOBALS['wp_posts'][42]->post_date = '2024-06-15 09:00:00';
+$builtLocal = $builder->build(42, array());
+check('falls back to post_date when GMT is unset', is_string($builtLocal['attributes']['publishedAt'] ?? null) && str_ends_with((string) $builtLocal['attributes']['publishedAt'], 'Z'));
+
+$GLOBALS['wp_posts'][42]->post_date_gmt = '';
+$GLOBALS['wp_posts'][42]->post_date = '';
+$builtNone = $builder->build(42, array());
+check('no date attribute when the post has none', ! array_key_exists('publishedAt', $builtNone['attributes']));
 
 echo "\n" . ($failures === 0 ? 'PASS — all assertions green' : "FAIL — {$failures} assertion(s) failed") . "\n";
 exit($failures === 0 ? 0 : 1);

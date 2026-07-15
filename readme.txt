@@ -4,7 +4,7 @@ Tags: migration, import, export, portfolio, custom post types
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 0.2.0
+Stable tag: 0.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,11 @@ No. Pack & Go only reads from WordPress; it never edits or deletes your WordPres
 Pack & Go reads ACF, Toolset, and Meta Box field definitions directly, so your structured content maps cleanly onto NoTrouble — not just the visible post body.
 
 == Changelog ==
+
+= 0.2.1 =
+* Reorder the fields and custom text in the post body with up/down controls.
+* Imported sections now show each post's full content on its own page, so nothing is hidden.
+* Keep each post's original publish date instead of dating everything to the import time.
 
 = 0.2.0 =
 * Import WooCommerce and WooCommerce Subscriptions pricing (regular, sale, and subscription price).

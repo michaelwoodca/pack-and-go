@@ -56,6 +56,10 @@ final class SyncRunner
                         'name' => $title,
                         'type' => $sectionType,
                         'format' => $this->defaultFormat($sectionType),
+                        // Imported posts always carry body content, so give the section detail
+                        // pages even for types that default to flat (e.g. video), otherwise the
+                        // page-only body is created but has nowhere to show.
+                        'hasPages' => true,
                     ));
                 } catch (Throwable $e) {
                     throw new RuntimeException((new FriendlyMessage())->for($e));

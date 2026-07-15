@@ -3,7 +3,7 @@
  * Plugin Name:       Pack & Go – Easy Site Migration
  * Plugin URI:        https://notrouble.com/pack-and-go
  * Description:        Pack up your WordPress posts, portfolio, and custom content and move it into your NoTrouble profile — no trouble.
- * Version:           0.2.0
+ * Version:           0.2.1
  * Requires at least: 6.0
  * Requires PHP:      8.1
  * Author:            NoTrouble.com
@@ -22,7 +22,7 @@ namespace NoTrouble\PackAndGo;
 
 defined('ABSPATH') || exit;
 
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 
 define('NoTrouble\PackAndGo\PLUGIN_DIR', plugin_dir_path(__FILE__));
 
