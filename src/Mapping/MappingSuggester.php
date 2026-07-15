@@ -185,16 +185,48 @@ final class MappingSuggester
         $wantsVideo = str_ends_with($target, 'video');
 
         foreach ($wpItems as $item) {
-            if (isset($usedWp[$item['key']]) || ! $item['isMedia']) {
+            if (isset($usedWp[$item['key']])) {
                 continue;
             }
 
-            if (($item['type'] === FieldType::Video->value) === $wantsVideo) {
+            if ($wantsVideo) {
+                if ($this->looksLikeVideoSource($item)) {
+                    return $item['key'];
+                }
+
+                continue;
+            }
+
+            // Image slot: any non-video media field.
+            if ($item['isMedia'] && $item['type'] !== FieldType::Video->value) {
                 return $item['key'];
             }
         }
 
         return null;
+    }
+
+    /**
+     * A field that should feed the video-upload slot: a native video field, or a URL/text field
+     * whose name points at a video FILE (e.g. "video url 1080p") — but not its captions track.
+     * Common WordPress setups store the real video as a plain URL field, not a media field.
+     *
+     * @param array{key: string, label: string, type: string, isMedia: bool} $item
+     */
+    private function looksLikeVideoSource(array $item): bool
+    {
+        if ($item['type'] === FieldType::Video->value) {
+            return true;
+        }
+
+        $haystack = strtolower($item['key'] . ' ' . $item['label']);
+        $isUrlish = in_array($item['type'], array(FieldType::Url->value, FieldType::Text->value), true);
+        $isCaption = str_contains($haystack, 'caption')
+            || str_contains($haystack, 'subtitle')
+            || str_contains($haystack, 'vtt')
+            || str_contains($haystack, 'srt');
+
+        return $isUrlish && str_contains($haystack, 'video') && ! $isCaption;
     }
 
     /**

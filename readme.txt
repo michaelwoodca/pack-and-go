@@ -4,7 +4,7 @@ Tags: migration, import, export, portfolio, custom post types
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 0.2.2
+Stable tag: 0.2.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,10 @@ No. Pack & Go only reads from WordPress; it never edits or deletes your WordPres
 Pack & Go reads ACF, Toolset, and Meta Box field definitions directly, so your structured content maps cleanly onto NoTrouble — not just the visible post body.
 
 == Changelog ==
+
+= 0.2.3 =
+* Fix: a post whose video or image never finished importing is now retried on the next push, instead of being skipped because its text hadn't changed.
+* Direct video-file links are now suggested for "Video: Video Upload" rather than the "Video URL" link field, so self-hosted videos import and play.
 
 = 0.2.2 =
 * Re-importing no longer duplicates videos or gallery images: media is replaced, not piled up.

@@ -132,9 +132,17 @@ final class SyncRunner
 
                 $built = $builder->build($postId, $mapping, $fieldTypes);
                 $hash = SyncLedger::hash($built);
+                $mediaHash = SyncLedger::hash($built['media']);
                 $entry = $ledger->entry($wpType, $postId);
 
-                if ($entry !== null && $entry['hash'] === $hash) {
+                // Media is "settled" when there's none to attach, or the ledger confirms this exact
+                // media set already attached. Old/partial imports left media_hash blank, so an
+                // otherwise-unchanged post whose media never landed (e.g. a video the plan blocked)
+                // is NOT skipped — it flows to the update path and the media is retried.
+                $mediaSettled = $built['media'] === array()
+                    || ($entry !== null && $entry['media_hash'] !== '' && $entry['media_hash'] === $mediaHash);
+
+                if ($entry !== null && $entry['hash'] === $hash && $mediaSettled) {
                     $state->recordSkipped();
 
                     continue;
@@ -149,7 +157,6 @@ final class SyncRunner
 
                     // Only touch media when it actually changed: re-attaching re-fetches (and
                     // re-encodes video), so a text-only edit should leave existing media alone.
-                    $mediaHash = SyncLedger::hash($built['media']);
                     $mediaOk = ($entry['media_hash'] !== '' && $entry['media_hash'] === $mediaHash)
                         ? true
                         : $this->attachMedia($account, $profile, $entry['nt_post_id'], $built['media'], $state, $friendly, $title);
@@ -168,7 +175,7 @@ final class SyncRunner
                     'postId' => $postId,
                     'title' => $title,
                     'hash' => $hash,
-                    'mediaHash' => SyncLedger::hash($built['media']),
+                    'mediaHash' => $mediaHash,
                     'item' => $this->toBatchItem($built),
                 );
             } catch (Throwable $e) {
