@@ -1,0 +1,64 @@
+name: Release
+
+# Build a clean, WordPress-ready zip and attach it to a GitHub Release whenever a version tag
+# is pushed (e.g. `git tag v0.1.0 && git push origin v0.1.0`). The asset is always named
+# `pack-and-go.zip`, so the "latest" download link stays stable:
+#   https://github.com/michaelwoodca/pack-and-go/releases/latest/download/pack-and-go.zip
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer
+
+      - name: Install runtime dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+      - name: Build plugin zip
+        run: |
+          set -euo pipefail
+          SLUG=pack-and-go
+          BUILD_DIR="build/${SLUG}"
+          mkdir -p "${BUILD_DIR}"
+          # Copy only what ships to users: runtime code plus bundled vendor, no dev tooling.
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='build' \
+            --exclude='tests' \
+            --exclude='node_modules' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            --exclude='.distignore' \
+            --exclude='.phpcs.cache' \
+            --exclude='phpcs.xml' \
+            --exclude='phpcs.xml.dist' \
+            --exclude='composer.json' \
+            --exclude='composer.lock' \
+            --exclude='*.md' \
+            ./ "${BUILD_DIR}/"
+          (cd build && zip -rq "../${SLUG}.zip" "${SLUG}")
+          echo "Built ${SLUG}.zip:"
+          unzip -l "${SLUG}.zip" | head -n 20
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pack-and-go.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true

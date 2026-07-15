@@ -1,0 +1,29 @@
+{
+    "name": "notrouble/pack-and-go",
+    "description": "Pack & Go – Easy Site Migration: move WordPress content into a NoTrouble profile.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.1",
+        "yahnis-elsts/plugin-update-checker": "^5.5"
+    },
+    "require-dev": {
+        "squizlabs/php_codesniffer": "^3.9",
+        "wp-coding-standards/wpcs": "^3.1",
+        "php-stubs/wordpress-stubs": "^6.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "NoTrouble\\PackAndGo\\": "src/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "scripts": {
+        "lint": "phpcs",
+        "lint:fix": "phpcbf"
+    }
+}

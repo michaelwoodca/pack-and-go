@@ -1,0 +1,60 @@
+=== Pack & Go – Easy Site Migration ===
+Contributors: notrouble
+Tags: migration, import, export, portfolio, custom post types
+Requires at least: 6.0
+Tested up to: 6.7
+Requires PHP: 8.1
+Stable tag: 0.1.0
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+
+Pack up your WordPress posts, portfolio, and custom content and move it into your NoTrouble profile — no trouble.
+
+== Description ==
+
+Pack & Go reads your WordPress content **from the inside** — including custom post types and custom fields from ACF, Toolset, and Meta Box that the WordPress REST API normally hides — then helps you map it onto your NoTrouble profile and moves it across in a few clicks.
+
+You stay in control the whole way:
+
+* **Connect securely.** Sign in to NoTrouble and authorize the move — no passwords stored, revocable any time.
+* **See what you're moving.** Pack & Go discovers your post types and their fields and suggests a sensible mapping, and shows you at a glance what's already synced, what's changed, and what's new.
+* **Map it your way.** Match each post type to a NoTrouble section, and each field to the right place.
+* **Move all, or pick and choose.** Push everything in one click, or hand-pick exactly which posts and pages go across from a simple checklist.
+* **Land it as drafts.** Everything arrives unpublished so you can review before it goes live.
+
+Re-running is safe: Pack & Go remembers what it already moved, so pushing again updates what changed and skips what's already there — no duplicates.
+
+Media (images and videos) comes along too — Pack & Go hands NoTrouble the URLs and it fetches them for you.
+
+Need a hand at any step? Every screen links straight to the [NoTrouble help centre](https://notrouble.com/help).
+
+== Installation ==
+
+1. Download the latest release from https://notrouble.com/pack-and-go/download
+2. In WordPress, go to *Plugins → Add New → Upload Plugin*, choose the downloaded `pack-and-go.zip`, and install it. (Or unzip it into `/wp-content/plugins/`.)
+3. Activate the plugin through the *Plugins* screen in WordPress.
+4. Open *Pack & Go* in the admin menu and click **Connect to NoTrouble**.
+
+Once installed, WordPress will notify you when a new version is available and can update it in one click.
+
+== Frequently Asked Questions ==
+
+= Does this change my WordPress site? =
+
+No. Pack & Go only reads from WordPress; it never edits or deletes your WordPress content.
+
+= What happens to my custom fields? =
+
+Pack & Go reads ACF, Toolset, and Meta Box field definitions directly, so your structured content maps cleanly onto NoTrouble — not just the visible post body.
+
+== Changelog ==
+
+= 0.1.0 =
+* First release.
+* Discovers WordPress post types and their fields, including ACF, Toolset, and Meta Box.
+* Secure connect to NoTrouble with no stored passwords, revocable any time.
+* Guided step-by-step flow with a single page to see your content and its status.
+* Choose to move everything or hand-pick items from a checklist with live sync status.
+* Remembers what's already been moved, so re-running updates changes and skips duplicates.
+* Progress with resume, cancel, and accessible status announcements.
+* Troubleshooting screen to clear a stuck import, reset sync history, or reset setup.

@@ -1,0 +1,16 @@
+# Dependencies (bundled into the built distribution, not committed)
+/vendor/
+/node_modules/
+
+# Build artifacts
+/build/
+/dist/
+*.zip
+
+# Tooling / local
+.phpcs.cache
+.phpunit.result.cache
+.DS_Store
+/.idea/
+/.vscode/
+composer.lock
