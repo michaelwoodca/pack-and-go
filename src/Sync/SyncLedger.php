@@ -64,6 +64,7 @@ final class SyncLedger
         return array(
             'nt_post_id' => is_string($entry['nt_post_id'] ?? null) ? $entry['nt_post_id'] : '',
             'hash' => is_string($entry['hash'] ?? null) ? $entry['hash'] : '',
+            'media_hash' => is_string($entry['media_hash'] ?? null) ? $entry['media_hash'] : '',
             'synced_at' => (int) ($entry['synced_at'] ?? 0),
         );
     }
@@ -80,11 +81,12 @@ final class SyncLedger
         return $entry !== null && $entry['hash'] !== $currentHash;
     }
 
-    public function record(string $wpType, int $wpPostId, string $ntPostId, string $hash, int $syncedAt): void
+    public function record(string $wpType, int $wpPostId, string $ntPostId, string $hash, int $syncedAt, string $mediaHash = ''): void
     {
         $this->data['items'][$wpType][(string) $wpPostId] = array(
             'nt_post_id' => $ntPostId,
             'hash' => $hash,
+            'media_hash' => $mediaHash,
             'synced_at' => $syncedAt,
         );
     }

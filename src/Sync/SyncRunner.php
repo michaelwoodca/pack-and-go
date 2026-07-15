@@ -145,9 +145,19 @@ final class SyncRunner
                     // a first import, so it's fine that this isn't batched).
                     $tagIds = $this->resolveTags($account, $profile, $sectionId, $built['tags'], $state, $friendly, $title);
                     $this->plugin->client()->updatePost($account, $profile, $sectionId, $entry['nt_post_id'], $built['attributes'], $tagIds);
-                    $ledger->record($wpType, $postId, $entry['nt_post_id'], $hash, $now);
                     $state->recordUpdated($postId, $entry['nt_post_id']);
-                    $this->attachMedia($account, $profile, $entry['nt_post_id'], $built['media'], $state, $friendly, $title);
+
+                    // Only touch media when it actually changed: re-attaching re-fetches (and
+                    // re-encodes video), so a text-only edit should leave existing media alone.
+                    $mediaHash = SyncLedger::hash($built['media']);
+                    $mediaOk = ($entry['media_hash'] !== '' && $entry['media_hash'] === $mediaHash)
+                        ? true
+                        : $this->attachMedia($account, $profile, $entry['nt_post_id'], $built['media'], $state, $friendly, $title);
+
+                    // Only mark fully synced when the media is in place too. Otherwise keep the
+                    // NoTrouble id but leave the hashes blank so the next push retries the media
+                    // (e.g. a video that the plan blocked and now allows).
+                    $ledger->record($wpType, $postId, $entry['nt_post_id'], $mediaOk ? $hash : '', $now, $mediaOk ? $mediaHash : '');
 
                     continue;
                 }
@@ -158,6 +168,7 @@ final class SyncRunner
                     'postId' => $postId,
                     'title' => $title,
                     'hash' => $hash,
+                    'mediaHash' => SyncLedger::hash($built['media']),
                     'item' => $this->toBatchItem($built),
                 );
             } catch (Throwable $e) {
@@ -202,7 +213,7 @@ final class SyncRunner
      * Send all queued new posts in one batch-create request and fold the per-item results back
      * into the ledger + progress state. A whole-batch failure marks every queued item failed.
      *
-     * @param array<int, array{postId: int, title: string, hash: string, item: array<string, mixed>}> $pending
+     * @param array<int, array{postId: int, title: string, hash: string, mediaHash: string, item: array<string, mixed>}> $pending
      */
     private function pushBatch(string $account, string $profile, string $sectionId, array $pending, SyncLedger $ledger, ImportState $state, FriendlyMessage $friendly, int $now, string $wpType): void
     {
@@ -228,7 +239,7 @@ final class SyncRunner
             $ntId = is_string($result['id'] ?? null) ? $result['id'] : '';
 
             if (($result['status'] ?? null) === 'created' && $ntId !== '') {
-                $ledger->record($wpType, $item['postId'], $ntId, $item['hash'], $now);
+                $ledger->record($wpType, $item['postId'], $ntId, $item['hash'], $now, $item['mediaHash']);
                 $state->recordCreated($item['postId'], $ntId);
 
                 continue;
@@ -295,9 +306,31 @@ final class SyncRunner
 
     /**
      * @param array<int, array{slot: string, url: string, alt: string}> $media
+     * @return bool True when every attach request was accepted; false if any was rejected
+     *              (e.g. a plan gate), so the caller can leave the post un-synced for a retry.
      */
-    private function attachMedia(string $account, string $profile, string $postId, array $media, ImportState $state, FriendlyMessage $friendly, string $title): void
+    private function attachMedia(string $account, string $profile, string $postId, array $media, ImportState $state, FriendlyMessage $friendly, string $title): bool
     {
+        if ($media === array()) {
+            return true;
+        }
+
+        $allOk = true;
+
+        // Replace, don't accumulate: clear each target slot once first (the server clears both a
+        // video's source and its encoded output), so re-syncing doesn't pile up duplicate media.
+        foreach (array_values(array_unique(array_column($media, 'slot'))) as $slot) {
+            try {
+                $this->plugin->client()->attachMedia($account, $profile, array(
+                    'slot' => $slot,
+                    'postId' => $postId,
+                    'clear' => true,
+                ));
+            } catch (Throwable $e) {
+                // A failed clear is best-effort; still attempt the attach below.
+            }
+        }
+
         foreach ($media as $item) {
             try {
                 $this->plugin->client()->attachMedia($account, $profile, array(
@@ -307,12 +340,25 @@ final class SyncRunner
                     'alt' => $item['alt'],
                 ));
             } catch (Throwable $e) {
+                $allOk = false;
                 $state->noteIssue(
                     $title,
-                    sprintf(/* translators: %s: reason */ __('An image could not be imported: %s', 'pack-and-go'), $friendly->for($e)),
+                    sprintf(
+                        /* translators: 1: media kind (image/video), 2: reason */
+                        __('A %1$s could not be imported: %2$s', 'pack-and-go'),
+                        $this->mediaKind($item['slot']),
+                        $friendly->for($e),
+                    ),
                 );
             }
         }
+
+        return $allOk;
+    }
+
+    private function mediaKind(string $slot): string
+    {
+        return $slot === 'post_video' ? __('video', 'pack-and-go') : __('image', 'pack-and-go');
     }
 
     /**

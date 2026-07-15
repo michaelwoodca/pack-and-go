@@ -73,6 +73,12 @@ $assert($reloaded->statusFor($type, 101, 6000) === 'changed', 'modified after sy
 $assert(! $reloaded->hasChanged($type, 101, $hash), 'same hash -> not changed');
 $assert($reloaded->hasChanged($type, 101, 'deadbeef'), 'different hash -> changed');
 
+$ledger->record($type, 202, 'nt_202', $hash, 5000, 'mediahash_abc');
+$ledger->persist();
+$reloadedMedia = new SyncLedger($profile);
+$assert(($reloadedMedia->entry($type, 202)['media_hash'] ?? null) === 'mediahash_abc', 'media_hash round-trips through record/entry');
+$assert(($reloadedMedia->entry($type, 101)['media_hash'] ?? null) === '', 'media_hash defaults to empty when the arg is omitted');
+
 $stats = $reloaded->statsForType($type, array(101 => 4000, 102 => 9000));
 $assert($stats['synced'] === 1 && $stats['new'] === 1 && $stats['changed'] === 0 && $stats['total'] === 2, 'statsForType buckets new/synced correctly');
 
